@@ -4,7 +4,7 @@
 #
 #   Prep.ps1 [-Role prod|observer] [-Yes] [-PlanOnly] [-DryRun]
 #            [-Only <sections>] [-Skip <sections>] [-Undo <latest|folder>]
-#            [-NoUpload] [-NoElevate]
+#            [-NoUpload] [-NoElevate] [-SkipActivation]
 #
 # Windows PowerShell 5.1 compatible. Pure ASCII source. Never throws to caller.
 
@@ -19,7 +19,8 @@ param(
     [string[]]$Skip = @(),
     [string]$Undo = '',
     [switch]$NoUpload,
-    [switch]$NoElevate
+    [switch]$NoElevate,
+    [switch]$SkipActivation
 )
 
 $ErrorActionPreference = 'Continue'
@@ -186,6 +187,7 @@ if (-not $isAdmin -and -not $NoElevate -and -not $PlanOnly) {
         [void]$elevateArgs.Add('"' + $Undo + '"')
     }
     if ($NoUpload) { [void]$elevateArgs.Add('-NoUpload') }
+    if ($SkipActivation) { [void]$elevateArgs.Add('-SkipActivation') }
 
     foreach ($extra in $args) {
         if ($null -ne $extra -and [string]$extra -ne '') {
@@ -898,6 +900,69 @@ try {
             catch {
                 Write-SRLogLine ('Error during edition switch: ' + $_.Exception.Message) 'Red'
             }
+        }
+    }
+
+    # -----------------------------------------------------------------------------------------
+    # Activation check (Windows may be unactivated after the edition switch)
+    # -----------------------------------------------------------------------------------------
+    if (-not $SkipActivation -and -not $DryRun -and -not $PlanOnly -and -not $editionLaunched) {
+        $windowsAppId = '55c92734-d682-4d71-983e-d6ec3f16059f'
+        $lic = Get-CimInstance SoftwareLicensingProduct `
+               -Filter "ApplicationID='$windowsAppId' AND PartialProductKey IS NOT NULL" `
+               -ErrorAction SilentlyContinue
+
+        if (-not ($lic | Where-Object { $_.LicenseStatus -eq 1 })) {
+            Write-SRLogLine ''
+            Write-SRLogLine '  Windows is not activated. Launching activation...' 'Yellow'
+            try {
+                Add-Type -AssemblyName System.Windows.Forms
+                if (-not ('SRWin32' -as [type])) {
+                    Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class SRWin32 {
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+"@
+                }
+
+                $before = (Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -ExpandProperty Id)
+
+                # MAS fetches and runs from get.activated.win; it spawns its own elevated CMD window.
+                Start-Process powershell -ArgumentList '-NoExit','-Command','irm https://get.activated.win | iex' | Out-Null
+
+                $newProc = $null
+                $deadline = (Get-Date).AddSeconds(30)
+                while ((Get-Date) -lt $deadline) {
+                    Start-Sleep -Milliseconds 500
+                    $newProc = Get-Process |
+                        Where-Object { $_.MainWindowHandle -ne 0 -and $before -notcontains $_.Id -and
+                                       ($_.ProcessName -in @('cmd','conhost','powershell','WindowsTerminal','OpenConsole')) } |
+                        Select-Object -First 1
+                    if ($newProc) { break }
+                }
+
+                if ($newProc) {
+                    Start-Sleep -Seconds 4   # let MAS render its menu
+                    $hwnd = $newProc.MainWindowHandle
+                    [SRWin32]::ShowWindow($hwnd, 9) | Out-Null
+                    [SRWin32]::SetForegroundWindow($hwnd) | Out-Null
+                    Start-Sleep -Milliseconds 700
+                    [System.Windows.Forms.SendKeys]::SendWait('1')
+                    Write-SRLogLine '  Activation window opened; sent key "1".' 'Cyan'
+                }
+                else {
+                    Write-SRLogLine '  Could not detect the activation window; finish it manually.' 'Yellow'
+                }
+            }
+            catch {
+                Write-SRLogLine ('  Activation launch failed: ' + $_.Exception.Message) 'Red'
+            }
+        }
+        else {
+            Write-SRLogLine '  Windows is activated.' 'Green'
         }
     }
 
