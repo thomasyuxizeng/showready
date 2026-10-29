@@ -174,6 +174,27 @@ if ($Live) {
 }
 
 # =============================================================================================
+# h: output encodes get 4:2:0. Kit 1.3.1 sent the 4:2:2 source straight to h264_nvenc, which
+#    only RTX 50 cards accept: an RTX 4070 Ti SUPER failed all three outputs ("Conversion failed!").
+Write-Host 'h: output encodes and the probe are 4:2:0' -ForegroundColor Cyan
+$ltSrc = [System.IO.File]::ReadAllText($ltPath)
+$outLines = @($ltSrc -split "`n" | Where-Object { $_ -match 'role = "out-' })
+Assert-That 'h: three output stream definitions' ($outLines.Count -eq 3) ('found ' + $outLines.Count)
+Assert-That 'h: every output uses $outFmt' (@($outLines | Where-Object { $_ -notmatch 'args = "\$outFmt -c:v' }).Count -eq 0)
+Assert-That 'h: $outFmt is yuv420p' ($ltSrc -match '\$outFmt = "-pix_fmt yuv420p"')
+Assert-That 'h: encoder probe also forces yuv420p' ($ltSrc -match 'testsrc2=s=1920x1080:r=60 -t 1 -pix_fmt yuv420p -c:v')
+$ffx = Join-Path $kit 'bin\ffmpeg.exe'
+if ($Live -and (Test-Path $ffx)) {
+    $src = Join-Path $env:TEMP ('sr_pf_' + [guid]::NewGuid().ToString('N') + '.mkv')
+    try {
+        $null = & $ffx -hide_banner -loglevel error -y -f lavfi -i 'testsrc2=s=1920x1080:r=60' -t 1 -c:v speedhq -pix_fmt yuv422p $src 2>&1
+        $log = @(& $ffx -hide_banner -i $src -t 1 -pix_fmt yuv420p -c:v libx264 -preset veryfast -f null - 2>&1 | ForEach-Object { [string]$_ })
+        Assert-That 'h: live: 4:2:2 SpeedHQ source encodes as 4:2:0' (@($log | Where-Object { $_ -match 'libx264 @.*4:2:0' }).Count -eq 1) (@($log | Where-Object { $_ -match 'profile' }) -join ' ')
+    }
+    finally { Remove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue }
+}
+
+# =============================================================================================
 Write-Host ''
 $col = 'Green'
 if ($script:nFail -gt 0) { $col = 'Red' }

@@ -220,7 +220,7 @@ function Invoke-SRLoadTest {
             try {
                 $pinfo = New-Object System.Diagnostics.ProcessStartInfo
                 $pinfo.FileName = $ffmpegPath
-                $pinfo.Arguments = "-hide_banner -y -f lavfi -i testsrc2=s=1920x1080:r=60 -t 1 -c:v $($cand.name) $($cand.preset) -f null -"
+                $pinfo.Arguments = "-hide_banner -y -f lavfi -i testsrc2=s=1920x1080:r=60 -t 1 -pix_fmt yuv420p -c:v $($cand.name) $($cand.preset) -f null -"
                 $pinfo.WorkingDirectory = $env:TEMP
                 $pinfo.UseShellExecute = $false
                 $pinfo.RedirectStandardError = $true
@@ -334,12 +334,16 @@ function Invoke-SRLoadTest {
         $encToUse = if ($chosenEncoder) { $chosenEncoder } else { "libx264" }
         $presetToUse = if ($chosenPreset) { $chosenPreset } else { "-preset veryfast" }
 
+        # The source is 4:2:2 SpeedHQ, like NDI. Without -pix_fmt, ffmpeg 8 hands 4:2:2 (nv16) to
+        # h264_nvenc, which only RTX 50 cards can encode: every older NVIDIA GPU fails to open the
+        # encoder. Streaming outputs are 4:2:0 anyway, as vMix/OBS send them.
+        $outFmt = "-pix_fmt yuv420p"
         $streamsDef = @(
             [pscustomobject]@{ role = "in-1";        kind = "decode"; codec = "speedhq";  target_kbps = $null;   args = "-f null -" },
             [pscustomobject]@{ role = "in-2";        kind = "decode"; codec = "speedhq";  target_kbps = $null;   args = "-f null -" },
-            [pscustomobject]@{ role = "out-srt";     kind = "encode"; codec = $encToUse;  target_kbps = $srtKbps; args = "-c:v $encToUse $presetToUse -b:v $($srtKbps)k -maxrate $($srtKbps)k -bufsize $(2 * $srtKbps)k -g 120 -f null -" },
-            [pscustomobject]@{ role = "out-youtube"; kind = "encode"; codec = $encToUse;  target_kbps = $ytKbps;  args = "-c:v $encToUse $presetToUse -b:v $($ytKbps)k -maxrate $($ytKbps)k -bufsize $(2 * $ytKbps)k -g 120 -f null -" },
-            [pscustomobject]@{ role = "out-twitch";  kind = "encode"; codec = $encToUse;  target_kbps = $twKbps;  args = "-c:v $encToUse $presetToUse -b:v $($twKbps)k -maxrate $($twKbps)k -bufsize $(2 * $twKbps)k -g 120 -f null -" }
+            [pscustomobject]@{ role = "out-srt";     kind = "encode"; codec = $encToUse;  target_kbps = $srtKbps; args = "$outFmt -c:v $encToUse $presetToUse -b:v $($srtKbps)k -maxrate $($srtKbps)k -bufsize $(2 * $srtKbps)k -g 120 -f null -" },
+            [pscustomobject]@{ role = "out-youtube"; kind = "encode"; codec = $encToUse;  target_kbps = $ytKbps;  args = "$outFmt -c:v $encToUse $presetToUse -b:v $($ytKbps)k -maxrate $($ytKbps)k -bufsize $(2 * $ytKbps)k -g 120 -f null -" },
+            [pscustomobject]@{ role = "out-twitch";  kind = "encode"; codec = $encToUse;  target_kbps = $twKbps;  args = "$outFmt -c:v $encToUse $presetToUse -b:v $($twKbps)k -maxrate $($twKbps)k -bufsize $(2 * $twKbps)k -g 120 -f null -" }
         )
 
         # 5. Launch all 5 streams concurrently
@@ -521,8 +525,11 @@ function Invoke-SRLoadTest {
                 if ($exitCode -ne 0) {
                     $errSnippet = $null
                     if (Test-Path $rs.ErrFile) {
-                        $errLines = @(Get-Content $rs.ErrFile | Where-Object { $_ -match '(?i)(cannot|could not|error|failed|invalid)' })
-                        if ($errLines.Count -gt 0) { $errSnippet = $errLines[-1].Trim() }
+                        $errLines = @(Get-Content $rs.ErrFile | Where-Object { $_ -match '(?i)(cannot|could not|error|failed|invalid|not supported)' })
+                        # the first lines name the cause; the last is usually just "Conversion failed!"
+                        $specific = @($errLines | Where-Object { $_ -notmatch '(?i)Conversion failed|Terminating thread|Task finished with error|Nothing was written' } | Select-Object -First 2)
+                        if ($specific.Count -gt 0) { $errSnippet = (@($specific | ForEach-Object { $_.Trim() }) -join ' | ') }
+                        elseif ($errLines.Count -gt 0) { $errSnippet = $errLines[-1].Trim() }
                     }
                     if ($errSnippet) {
                         $streamError = "Process failed (exit code $exitCode): $errSnippet"

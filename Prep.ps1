@@ -25,7 +25,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
-$ToolVersion = '1.3.1-prep'
+$ToolVersion = '1.3.3-prep'
 $Inv = [System.Globalization.CultureInfo]::InvariantCulture
 
 $Root = $PSScriptRoot

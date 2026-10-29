@@ -471,6 +471,39 @@ Set-Item function:Get-SRPrepTargetEditions $origTargetEditionsFn
 Set-Item function:Test-SRPrepIsAdmin $origIsAdminFn
 
 # =============================================================================================
+# 9. Real (non-DryRun) apply and undo path with a fake item that matches no action.
+#    Kit 1.3.1 threw "'if' is not recognized" here on every real show PC: -Status (if ...).
+# =============================================================================================
+Write-Host '9: real apply/undo path records results (fake item, changes nothing)' -ForegroundColor Cyan
+$realDir = Join-Path $env:TEMP ("sr-prep-test-real-" + [Guid]::NewGuid().ToString('N'))
+$fakeItems = @(
+    [pscustomobject]@{ id = 'sys_fake_ok'; section = 'updates'; title = 'fake'; status = 'CHANGE'; current = 'a'; target = 'b'; detail = ''; risk = 'low'
+                       needs_reboot = $false; needs_admin = $false; default_apply = $true; commands = @(); undo = [pscustomobject]@{ x = 'absent' } },
+    [pscustomobject]@{ id = 'sys_fake_two'; section = 'updates'; title = 'fake 2'; status = 'CHANGE'; current = 'a'; target = 'b'; detail = ''; risk = 'low'
+                       needs_reboot = $false; needs_admin = $false; default_apply = $true; commands = @(); undo = [pscustomobject]@{ x = 'absent' } }
+)
+$realErr = $null
+$realRes = @()
+try { $realRes = @(Invoke-SRPrepSystemApply -Items $fakeItems -Settings $null -BackupDir $realDir | ForEach-Object { $_ }) }
+catch { $realErr = $_.Exception.Message }
+Assert-That '9.1: real apply does not throw' ($null -eq $realErr) ([string]$realErr)
+Assert-That '9.2: real apply records every item (not just the first)' ($realRes.Count -eq 2) ("count " + $realRes.Count)
+Assert-That '9.3: real apply status is DONE' (@($realRes | Where-Object { $_.status -eq 'DONE' }).Count -eq 2) (@($realRes | ForEach-Object { $_.status }) -join ',')
+Assert-That '9.4: undo data saved before applying' (Test-Path (Join-Path $realDir 'system-undo.json'))
+$undoErr = $null
+$undoRes = @()
+try { $undoRes = @(Undo-SRPrepSystem -BackupDir $realDir | ForEach-Object { $_ }) }
+catch { $undoErr = $_.Exception.Message }
+Assert-That '9.5: real undo does not throw' ($null -eq $undoErr) ([string]$undoErr)
+Assert-That '9.6: real undo records both entries' ($undoRes.Count -eq 2) ("count " + $undoRes.Count)
+if (Test-Path $realDir) { Remove-Item -Path $realDir -Recurse -Force -ErrorAction SilentlyContinue }
+
+# a statement inside plain brackets, "(if ...)", is a command call in PowerShell: never valid
+$kitRoot = Split-Path -Parent $PSScriptRoot
+$badParen = @(Get-ChildItem -Path $kitRoot -Recurse -Filter '*.ps1' | Select-String -Pattern '[^$@]\(\s*(if|foreach|switch|while)\s*\(' | Where-Object { $_.Line -notmatch '^\s*#' -and $_.Path -notmatch 'Test-PrepSystem' })
+Assert-That '9.7: no "(if (" statement-in-brackets anywhere in the kit' ($badParen.Count -eq 0) (@($badParen | ForEach-Object { (Split-Path -Leaf $_.Path) + ':' + $_.LineNumber }) -join ', ')
+
+# =============================================================================================
 # Test Summary
 # =============================================================================================
 Write-Host ''

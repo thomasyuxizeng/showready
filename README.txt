@@ -1,4 +1,4 @@
-ShowReady 1.3.1 - can these PCs and this line run the show?
+ShowReady 1.3.3 - can these PCs and this line run the show?
 ===========================================================
 
 Show: 2 x OMT/NDI 1080p60 in; 3 x 1080p60 out (SRT to France, YouTube, Twitch).
@@ -51,6 +51,21 @@ the checks below.
 Undo everything it changed: Undo-Prep.cmd (drivers and the English language pack stay).
 Just look without changing anything: Run-Prep.cmd -PlanOnly
 Only some sections: Run-Prep.cmd -Only power,startup
+
+
+AUDIO DEVICE NAMES IN ENGLISH (any PC, optional)
+------------------------------------------------
+Windows names each audio device in the language it had when the device was installed, and
+keeps that name after prep switches Windows to English. vMix/OBS then list devices such as
+"<Korean word> (Blackmagic DeckLink Quad 2 (1) Audio)". To rename them, close vMix/OBS and
+double-click Rename-AudioDevices.cmd. It lists every Korean name with its English name
+(Speakers, Headphones, Microphone, ...), asks once, then renames. No admin rights needed.
+  - Only the first part changes; the part in brackets is the driver's name.
+  - Restart vMix/OBS afterwards and check Settings > Audio Outputs: outputs you picked
+    before may need picking again.
+  - Names it doesn't know are listed as UNKNOWN: rename those by hand (Win+R, mmsys.cpl,
+    right-click the device > Properties).
+  - Just look: Rename-AudioDevices.cmd -PlanOnly     Undo: Rename-AudioDevices.cmd -Undo
 
 
 RUN ORDER (three PCs)
@@ -163,6 +178,7 @@ Run-ShowReady.cmd / Run-ShowReady-Full.cmd   prod PC: start here
 Run-Observer.cmd                             observer PCs: start here
 Run-LanPartner.cmd                           speed-test server only (for any other source PC)
 Setup-Upload.cmd / Upload-Results.cmd        set the upload key / upload runs made offline
+Rename-AudioDevices.cmd                      audio device names in English (backups in audio-names\)
 ShowReady.ps1, Prep.ps1, lib\                the tests, the prep steps and the rules
 config.json, prep-config.json                show profile, thresholds, prep keep/close lists
 upload.json                                  upload key (results repo only)

@@ -497,7 +497,7 @@ function Send-SRPendingResults {
         $jsonA = ConvertFrom-Json ([System.IO.File]::ReadAllText($jsonPathA, [System.Text.Encoding]::UTF8))
         if (-not $jsonA.meta.plan_only) { throw "Test (a): meta.plan_only is not true" }
         if ($jsonA.meta.role -ne 'prod') { throw "Test (a): meta.role is not prod" }
-        if ($jsonA.meta.tool_version -ne '1.3.1-prep') { throw "Test (a): meta.tool_version is not 1.3.1-prep" }
+        if ($jsonA.meta.tool_version -ne '1.3.3-prep') { throw "Test (a): meta.tool_version is not 1.3.3-prep" }
         if ($jsonA.plan.Count -ne 12) { throw ("Test (a): plan count was " + $jsonA.plan.Count + ", expected 12") }
         if ($jsonA.applied.Count -ne 0) { throw ("Test (a): applied count was " + $jsonA.applied.Count + ", expected 0") }
         if (Test-Path -LiteralPath $callLogPath) { throw "Test (a): apply stubs should not have been called" }

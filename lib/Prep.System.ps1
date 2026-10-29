@@ -1810,7 +1810,7 @@ function Invoke-SRPrepSystemApply {
             -Id $item.id `
             -Section $item.section `
             -Title $item.title `
-            -Status (if ($applySuccess) { 'DONE' } else { 'FAILED' }) `
+            -Status $(if ($applySuccess) { 'DONE' } else { 'FAILED' }) `
             -Current $item.current `
             -Target $item.target `
             -Detail $applyDetail `
@@ -2048,7 +2048,7 @@ function Undo-SRPrepSystem {
             -Id $id `
             -Section $section `
             -Title "Undo $id" `
-            -Status (if ($undoSuccess) { 'DONE' } else { 'FAILED' }) `
+            -Status $(if ($undoSuccess) { 'DONE' } else { 'FAILED' }) `
             -Current 'modified' `
             -Target 'restored' `
             -Detail $undoDetail `
